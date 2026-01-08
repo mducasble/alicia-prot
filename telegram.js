@@ -263,6 +263,64 @@ async function getUnreadMessages(sessionString) {
   }
 }
 
+async function getRecentMessages(sessionString, days = 7) {
+  const client = await createClient(sessionString);
+
+  try {
+    const cutoffDate = Math.floor(Date.now() / 1000) - days * 24 * 60 * 60;
+    const dialogs = await client.getDialogs({ limit: 50 });
+
+    const allMessages = [];
+
+    for (const dialog of dialogs) {
+      // Skip channels and broadcasts, focus on DMs and groups
+      if (dialog.isChannel && !dialog.isGroup) continue;
+
+      try {
+        const messages = await client.getMessages(dialog.entity, {
+          limit: 50,
+          offsetDate: 0,
+        });
+
+        for (const msg of messages) {
+          if (msg.date && msg.date >= cutoffDate) {
+            allMessages.push({
+              id: msg.id?.toString() || "",
+              text: msg.message || "",
+              date: msg.date,
+              dialogId: dialog.id?.toString() || "",
+              dialogTitle: dialog.title || dialog.name || "Unknown",
+              isGroup: dialog.isGroup || false,
+              isChannel: dialog.isChannel || false,
+              senderId: msg.senderId?.toString() || "",
+              senderName: msg.sender?.firstName || msg.sender?.title || "Unknown",
+              isOutgoing: msg.out || false,
+            });
+          }
+        }
+      } catch (e) {
+        console.log(
+          `Error fetching messages for dialog ${dialog.id}:`,
+          e.message
+        );
+      }
+    }
+
+    allMessages.sort((a, b) => b.date - a.date);
+
+    await client.disconnect();
+    return {
+      success: true,
+      messages: allMessages,
+      totalCount: allMessages.length,
+      cutoffDate: new Date(cutoffDate * 1000).toISOString(),
+    };
+  } catch (error) {
+    await client.disconnect();
+    throw error;
+  }
+}
+
 module.exports = {
   sendCode,
   verifyCode,
@@ -270,4 +328,5 @@ module.exports = {
   logout,
   getDialogs,
   getUnreadMessages,
+  getRecentMessages,
 };
