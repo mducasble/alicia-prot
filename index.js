@@ -30,7 +30,6 @@ app.post("/auth/send-code", authenticateRequest, async (req, res) => {
     if (!phoneNumber) {
       return res.status(400).json({ error: "Phone number required" });
     }
-
     console.log(`Sending code to ${phoneNumber}`);
     const result = await telegram.sendCode(phoneNumber);
     res.json(result);
@@ -47,13 +46,11 @@ app.post("/auth/verify-code", authenticateRequest, async (req, res) => {
     if (!authId || !code) {
       return res.status(400).json({ error: "AuthId and code required" });
     }
-
     console.log(`Verifying code for ${authId}`);
     const result = await telegram.verifyCode(authId, code);
     res.json(result);
   } catch (error) {
     console.error("VerifyCode error:", error.message);
-    
     if (error.message.includes("PHONE_CODE_INVALID")) {
       return res.status(400).json({ error: "Código inválido" });
     }
@@ -63,7 +60,6 @@ app.post("/auth/verify-code", authenticateRequest, async (req, res) => {
     if (error.message.includes("AUTH_EXPIRED")) {
       return res.status(400).json({ error: "Sessão expirada. Tente novamente." });
     }
-    
     res.status(500).json({ error: error.message });
   }
 });
@@ -75,17 +71,14 @@ app.post("/auth/verify-2fa", authenticateRequest, async (req, res) => {
     if (!authId || !password) {
       return res.status(400).json({ error: "AuthId and password required" });
     }
-
     console.log(`Verifying 2FA for ${authId}`);
     const result = await telegram.verify2FA(authId, password);
     res.json(result);
   } catch (error) {
     console.error("Verify2FA error:", error.message);
-    
     if (error.message.includes("PASSWORD")) {
       return res.status(400).json({ error: "Senha incorreta" });
     }
-    
     res.status(500).json({ error: error.message });
   }
 });
@@ -109,7 +102,6 @@ app.post("/messages/dialogs", authenticateRequest, async (req, res) => {
     if (!sessionString) {
       return res.status(400).json({ error: "Session string required" });
     }
-
     console.log("Fetching dialogs");
     const result = await telegram.getDialogs(sessionString, limit);
     res.json(result);
@@ -126,7 +118,6 @@ app.post("/messages/unread", authenticateRequest, async (req, res) => {
     if (!sessionString) {
       return res.status(400).json({ error: "Session string required" });
     }
-
     console.log("Fetching unread messages");
     const result = await telegram.getUnreadMessages(sessionString);
     res.json(result);
@@ -143,7 +134,6 @@ app.post("/messages/recent", authenticateRequest, async (req, res) => {
     if (!sessionString) {
       return res.status(400).json({ error: "Session string required" });
     }
-
     console.log(`Fetching messages from last ${days || 7} days`);
     const result = await telegram.getRecentMessages(sessionString, days || 7);
     res.json(result);
@@ -153,6 +143,23 @@ app.post("/messages/recent", authenticateRequest, async (req, res) => {
   }
 });
 
+// Send message
+app.post("/messages/send", authenticateRequest, async (req, res) => {
+  try {
+    const { sessionString, dialogId, message, replyToMsgId } = req.body;
+    if (!sessionString || !dialogId || !message) {
+      return res.status(400).json({ error: "Session string, dialogId, and message required" });
+    }
+    console.log(`Sending message to dialog ${dialogId}`);
+    const result = await telegram.sendMessage(sessionString, dialogId, message, replyToMsgId);
+    res.json(result);
+  } catch (error) {
+    console.error("SendMessage error:", error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Telegram MTProto server running on port ${PORT}`);
 });
+
