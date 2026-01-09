@@ -4,7 +4,6 @@ const { StringSession } = require("telegram/sessions");
 const API_ID = parseInt(process.env.TELEGRAM_API_ID || "0", 10);
 const API_HASH = process.env.TELEGRAM_API_HASH || "";
 
-// In-memory storage for pending auth flows
 const pendingAuths = new Map();
 
 function deferred() {
@@ -45,10 +44,8 @@ function cleanupExpiredAuths() {
 
 async function sendCode(phoneNumber) {
   cleanupExpiredAuths();
-
   const authId = `auth_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
   const client = await createClient("");
-
   const codeDeferred = deferred();
   const passwordDeferred = deferred();
   const passwordRequested = deferred();
@@ -70,10 +67,8 @@ async function sendCode(phoneNumber) {
           console.error("Telegram start error:", err?.message || err);
         },
       });
-
       const me = await client.getMe();
       const finalSession = client.session.save();
-
       return {
         sessionString: finalSession,
         user: {
@@ -102,41 +97,23 @@ async function sendCode(phoneNumber) {
     startPromise,
   });
 
-  return {
-    success: true,
-    authId,
-    codeLength: 5,
-    codeType: "SMS",
-  };
+  return { success: true, authId, codeLength: 5, codeType: "SMS" };
 }
 
 async function verifyCode(authId, code) {
   const pending = pendingAuths.get(authId);
   if (!pending) throw new Error("AUTH_EXPIRED");
-
   pending.codeDeferred.resolve(code);
-
   try {
     const result = await Promise.race([
       pending.startPromise.then((r) => ({ type: "done", data: r })),
       pending.passwordRequested.promise.then(() => ({ type: "needs2fa" })),
     ]);
-
     if (result.type === "needs2fa") {
-      return {
-        success: true,
-        needs2FA: true,
-        authId,
-      };
+      return { success: true, needs2FA: true, authId };
     }
-
     pendingAuths.delete(authId);
-
-    return {
-      success: true,
-      sessionString: result.data.sessionString,
-      user: result.data.user,
-    };
+    return { success: true, sessionString: result.data.sessionString, user: result.data.user };
   } catch (error) {
     pendingAuths.delete(authId);
     throw error;
@@ -146,33 +123,23 @@ async function verifyCode(authId, code) {
 async function verify2FA(authId, password) {
   const pending = pendingAuths.get(authId);
   if (!pending) throw new Error("AUTH_EXPIRED");
-
   pending.passwordDeferred.resolve(password);
-
   try {
     const result = await pending.startPromise;
     pendingAuths.delete(authId);
-
-    return {
-      success: true,
-      sessionString: result.sessionString,
-      user: result.user,
-    };
+    return { success: true, sessionString: result.sessionString, user: result.user };
   } catch (error) {
     pendingAuths.delete(authId);
-
     const msg = error?.message || String(error);
     if (msg.toUpperCase().includes("PASSWORD")) {
       throw new Error("PASSWORD_INVALID");
     }
-
     throw error;
   }
 }
 
 async function logout(sessionString) {
   if (!sessionString) return { success: true };
-
   try {
     const client = await createClient(sessionString);
     await client.logOut();
@@ -180,29 +147,23 @@ async function logout(sessionString) {
   } catch (error) {
     console.log("Logout error (may already be logged out):", error.message);
   }
-
   return { success: true };
 }
 
 async function getDialogs(sessionString, limit = 50) {
   const client = await createClient(sessionString);
-
   try {
     const dialogs = await client.getDialogs({ limit });
-
     const dialogsData = dialogs.map((dialog) => ({
       id: dialog.id?.toString(),
       title: dialog.title || dialog.name || "Unknown",
       unreadCount: dialog.unreadCount || 0,
       lastMessage: dialog.message?.message || "",
-      date: dialog.message?.date
-        ? new Date(dialog.message.date * 1000).toISOString()
-        : null,
+      date: dialog.message?.date ? new Date(dialog.message.date * 1000).toISOString() : null,
       isUser: dialog.isUser,
       isGroup: dialog.isGroup,
       isChannel: dialog.isChannel,
     }));
-
     await client.disconnect();
     return { success: true, dialogs: dialogsData };
   } catch (error) {
@@ -213,29 +174,22 @@ async function getDialogs(sessionString, limit = 50) {
 
 async function getUnreadMessages(sessionString) {
   const client = await createClient(sessionString);
-
   try {
     const dialogs = await client.getDialogs({ limit: 100 });
     const unreadDialogs = dialogs.filter((d) => (d.unreadCount || 0) > 0);
-
     const unreadMessages = [];
-
     for (const dialog of unreadDialogs.slice(0, 15)) {
       try {
         const messages = await client.getMessages(dialog.entity, {
           limit: Math.min(dialog.unreadCount || 5, 20),
         });
-
         const formattedMessages = messages.map((msg) => ({
           id: msg.id?.toString() || "",
           text: msg.message || "",
-          date: msg.date
-            ? new Date(msg.date * 1000).toISOString()
-            : new Date().toISOString(),
+          date: msg.date ? new Date(msg.date * 1000).toISOString() : new Date().toISOString(),
           senderId: msg.senderId?.toString() || "",
           senderName: msg.sender?.firstName || msg.sender?.title || "Unknown",
         }));
-
         unreadMessages.push({
           dialogId: dialog.id?.toString() || "",
           dialogTitle: dialog.title || dialog.name || "Unknown",
@@ -244,19 +198,11 @@ async function getUnreadMessages(sessionString) {
           messages: formattedMessages,
         });
       } catch (e) {
-        console.log(
-          `Error fetching messages for dialog ${dialog.id}:`,
-          e.message
-        );
+        console.log(`Error fetching messages for dialog ${dialog.id}:`, e.message);
       }
     }
-
     await client.disconnect();
-    return {
-      success: true,
-      unread: unreadMessages,
-      totalUnreadDialogs: unreadDialogs.length,
-    };
+    return { success: true, unread: unreadMessages, totalUnreadDialogs: unreadDialogs.length };
   } catch (error) {
     await client.disconnect();
     throw error;
@@ -265,23 +211,14 @@ async function getUnreadMessages(sessionString) {
 
 async function getRecentMessages(sessionString, days = 7) {
   const client = await createClient(sessionString);
-
   try {
     const cutoffDate = Math.floor(Date.now() / 1000) - days * 24 * 60 * 60;
     const dialogs = await client.getDialogs({ limit: 50 });
-
     const allMessages = [];
-
     for (const dialog of dialogs) {
-      // Skip channels and broadcasts, focus on DMs and groups
       if (dialog.isChannel && !dialog.isGroup) continue;
-
       try {
-        const messages = await client.getMessages(dialog.entity, {
-          limit: 50,
-          offsetDate: 0,
-        });
-
+        const messages = await client.getMessages(dialog.entity, { limit: 50, offsetDate: 0 });
         for (const msg of messages) {
           if (msg.date && msg.date >= cutoffDate) {
             allMessages.push({
@@ -299,22 +236,29 @@ async function getRecentMessages(sessionString, days = 7) {
           }
         }
       } catch (e) {
-        console.log(
-          `Error fetching messages for dialog ${dialog.id}:`,
-          e.message
-        );
+        console.log(`Error fetching messages for dialog ${dialog.id}:`, e.message);
       }
     }
-
     allMessages.sort((a, b) => b.date - a.date);
-
     await client.disconnect();
-    return {
-      success: true,
-      messages: allMessages,
-      totalCount: allMessages.length,
-      cutoffDate: new Date(cutoffDate * 1000).toISOString(),
-    };
+    return { success: true, messages: allMessages, totalCount: allMessages.length, cutoffDate: new Date(cutoffDate * 1000).toISOString() };
+  } catch (error) {
+    await client.disconnect();
+    throw error;
+  }
+}
+
+async function sendMessage(sessionString, dialogId, message, replyToMsgId = null) {
+  const client = await createClient(sessionString);
+  try {
+    const dialogs = await client.getDialogs({ limit: 100 });
+    const dialog = dialogs.find(d => d.id?.toString() === dialogId);
+    if (!dialog) throw new Error("Dialog not found");
+    const sendOptions = { message };
+    if (replyToMsgId) sendOptions.replyTo = parseInt(replyToMsgId, 10);
+    const result = await client.sendMessage(dialog.entity, sendOptions);
+    await client.disconnect();
+    return { success: true, messageId: result.id?.toString(), date: result.date };
   } catch (error) {
     await client.disconnect();
     throw error;
@@ -329,4 +273,5 @@ module.exports = {
   getDialogs,
   getUnreadMessages,
   getRecentMessages,
+  sendMessage,
 };
